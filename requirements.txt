@@ -1,0 +1,13 @@
+torch
+torchvision
+opencv-python
+numpy
+pillow
+matplotlib
+scikit-learn
+tqdm
+ultralytics
+pytorchvideo
+transformers
+fvcore
+thop
