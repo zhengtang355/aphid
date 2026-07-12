@@ -64,6 +64,27 @@ DEFAULT_CONFIG = {
     "pretrained": True,
     "resnet_weight_path": r"C:\Users\zhengtang\.cache\torch\hub\checkpoints\resnet50-11ad3fa6.pth",
     "use_class_weights": True,
+    "random_horizontal_flip": True,
+    "random_horizontal_flip_p": 0.5,
+    "random_vertical_flip": True,
+    "random_vertical_flip_p": 0.2,
+    "random_rotation": True,
+    "random_rotation_degrees": 8,
+    "random_rotation_p": 0.5,
+    "random_affine": True,
+    "random_affine_p": 0.5,
+    "random_translate": 0.03,
+    "random_scale_min": 0.95,
+    "random_scale_max": 1.05,
+    "random_shear_degrees": 3,
+    "gaussian_blur": True,
+    "gaussian_blur_p": 0.2,
+    "gaussian_blur_kernel": 3,
+    "gaussian_blur_sigma_min": 0.1,
+    "gaussian_blur_sigma_max": 1.0,
+    "gaussian_noise": True,
+    "gaussian_noise_p": 0.2,
+    "gaussian_noise_std": 0.01,
     "sampling": "uniform",
     "num_frames": 30,
     "frame_stride": 2,
@@ -225,6 +246,27 @@ class CroppedInstanceDataset(Dataset):
         use_sampled_endpoints=True,
         return_segments=False,
         num_segments=3,
+        random_rotation=False,
+        random_rotation_degrees=8,
+        random_rotation_p=0.5,
+        random_horizontal_flip=True,
+        random_horizontal_flip_p=0.5,
+        random_vertical_flip=False,
+        random_vertical_flip_p=0.2,
+        random_affine=False,
+        random_affine_p=0.5,
+        random_translate=0.03,
+        random_scale_min=0.95,
+        random_scale_max=1.05,
+        random_shear_degrees=3,
+        gaussian_blur=False,
+        gaussian_blur_p=0.2,
+        gaussian_blur_kernel=3,
+        gaussian_blur_sigma_min=0.1,
+        gaussian_blur_sigma_max=1.0,
+        gaussian_noise=False,
+        gaussian_noise_p=0.2,
+        gaussian_noise_std=0.01,
     ):
         self.root_dir = Path(root_dir)
         self.class_names = class_names
@@ -240,6 +282,29 @@ class CroppedInstanceDataset(Dataset):
         self.use_sampled_endpoints = use_sampled_endpoints
         self.return_segments = return_segments
         self.num_segments = int(num_segments)
+        self.random_horizontal_flip = bool(random_horizontal_flip)
+        self.random_horizontal_flip_p = float(random_horizontal_flip_p)
+        self.random_vertical_flip = bool(random_vertical_flip)
+        self.random_vertical_flip_p = float(random_vertical_flip_p)
+        self.random_rotation = bool(random_rotation)
+        self.random_rotation_degrees = float(random_rotation_degrees)
+        self.random_rotation_p = float(random_rotation_p)
+        self.random_affine = bool(random_affine)
+        self.random_affine_p = float(random_affine_p)
+        self.random_translate = float(random_translate)
+        self.random_scale_min = float(random_scale_min)
+        self.random_scale_max = float(random_scale_max)
+        self.random_shear_degrees = float(random_shear_degrees)
+        self.gaussian_blur = bool(gaussian_blur)
+        self.gaussian_blur_p = float(gaussian_blur_p)
+        self.gaussian_blur_kernel = int(gaussian_blur_kernel)
+        if self.gaussian_blur_kernel % 2 == 0:
+            self.gaussian_blur_kernel += 1
+        self.gaussian_blur_sigma_min = float(gaussian_blur_sigma_min)
+        self.gaussian_blur_sigma_max = float(gaussian_blur_sigma_max)
+        self.gaussian_noise = bool(gaussian_noise)
+        self.gaussian_noise_p = float(gaussian_noise_p)
+        self.gaussian_noise_std = float(gaussian_noise_std)
         self.samples = []
 
         if self.class_map:
@@ -262,6 +327,96 @@ class CroppedInstanceDataset(Dataset):
         self.image_size = image_size
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         self.color_jitter = transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.10, hue=0.02)
+
+    def _sample_aug_params(self):
+        params = {
+            "hflip": self.train and self.random_horizontal_flip and random.random() < self.random_horizontal_flip_p,
+            "vflip": self.train and self.random_vertical_flip and random.random() < self.random_vertical_flip_p,
+            "rotate": self.train and self.random_rotation and random.random() < self.random_rotation_p,
+            "affine": self.train and self.random_affine and random.random() < self.random_affine_p,
+            "blur": self.train and self.gaussian_blur and random.random() < self.gaussian_blur_p,
+            "noise": self.train and self.gaussian_noise and random.random() < self.gaussian_noise_p,
+        }
+        params["rotation_angle"] = (
+            random.uniform(-self.random_rotation_degrees, self.random_rotation_degrees)
+            if params["rotate"]
+            else 0.0
+        )
+        params["affine_angle"] = (
+            random.uniform(-self.random_rotation_degrees, self.random_rotation_degrees)
+            if params["affine"]
+            else 0.0
+        )
+        max_translate = int(round(self.random_translate * self.image_size))
+        params["translate"] = (
+            (
+                random.randint(-max_translate, max_translate),
+                random.randint(-max_translate, max_translate),
+            )
+            if params["affine"] and max_translate > 0
+            else (0, 0)
+        )
+        params["scale"] = (
+            random.uniform(self.random_scale_min, self.random_scale_max)
+            if params["affine"]
+            else 1.0
+        )
+        params["shear"] = (
+            [
+                random.uniform(-self.random_shear_degrees, self.random_shear_degrees),
+                random.uniform(-self.random_shear_degrees, self.random_shear_degrees),
+            ]
+            if params["affine"]
+            else [0.0, 0.0]
+        )
+        params["blur_sigma"] = (
+            random.uniform(self.gaussian_blur_sigma_min, self.gaussian_blur_sigma_max)
+            if params["blur"]
+            else self.gaussian_blur_sigma_min
+        )
+        return params
+
+    def _apply_pil_aug(self, img, params, is_mask=False):
+        interpolation = (
+            transforms.InterpolationMode.NEAREST
+            if is_mask
+            else transforms.InterpolationMode.BILINEAR
+        )
+        fill = 0
+        if params["hflip"]:
+            img = transforms.functional.hflip(img)
+        if params["vflip"]:
+            img = transforms.functional.vflip(img)
+        if params["rotate"]:
+            img = transforms.functional.rotate(
+                img,
+                params["rotation_angle"],
+                interpolation=interpolation,
+                fill=fill,
+            )
+        if params["affine"]:
+            img = transforms.functional.affine(
+                img,
+                angle=params["affine_angle"],
+                translate=params["translate"],
+                scale=params["scale"],
+                shear=params["shear"],
+                interpolation=interpolation,
+                fill=fill,
+            )
+        if (not is_mask) and params["blur"]:
+            img = transforms.functional.gaussian_blur(
+                img,
+                kernel_size=[self.gaussian_blur_kernel, self.gaussian_blur_kernel],
+                sigma=[params["blur_sigma"], params["blur_sigma"]],
+            )
+        return img
+
+    def _apply_tensor_aug(self, img_t, params):
+        if params["noise"]:
+            noise = torch.randn_like(img_t) * self.gaussian_noise_std
+            img_t = (img_t + noise).clamp(0.0, 1.0)
+        return img_t
 
     def __len__(self):
         return len(self.samples)
@@ -327,25 +482,26 @@ class CroppedInstanceDataset(Dataset):
         name, frames, label = self.samples[idx]
         if self.return_segments:
             segment_indices = self._sample_segment_indices(len(frames))
-            do_flip = self.train and random.random() < 0.5
+            aug_params = self._sample_aug_params()
             segments = []
             for indices in segment_indices:
                 imgs = []
                 for i in indices:
                     img = Image.open(frames[int(i)]).convert("RGB")
                     img = transforms.Resize((self.image_size, self.image_size))(img)
-                    if do_flip:
-                        img = transforms.functional.hflip(img)
+                    img = self._apply_pil_aug(img, aug_params, is_mask=False)
                     if self.train:
                         img = self.color_jitter(img)
-                    imgs.append(self.normalize(transforms.functional.to_tensor(img)))
+                    img_t = transforms.functional.to_tensor(img)
+                    img_t = self._apply_tensor_aug(img_t, aug_params)
+                    imgs.append(self.normalize(img_t))
                 segments.append(torch.stack(imgs, dim=0))
             video = torch.stack(segments, dim=0)
             return video, torch.tensor(label, dtype=torch.long), name
         indices = self._sample_indices(len(frames))
         imgs = []
         masks = []
-        do_flip = self.train and random.random() < 0.5
+        aug_params = self._sample_aug_params()
         first_endpoint_img = None
         last_endpoint_img = None
         for i in indices:
@@ -364,13 +520,13 @@ class CroppedInstanceDataset(Dataset):
             img = transforms.Resize((self.image_size, self.image_size))(img)
             if mask is not None:
                 mask = transforms.Resize((self.image_size, self.image_size), interpolation=transforms.InterpolationMode.NEAREST)(mask)
-            if do_flip:
-                img = transforms.functional.hflip(img)
-                if mask is not None:
-                    mask = transforms.functional.hflip(mask)
+            img = self._apply_pil_aug(img, aug_params, is_mask=False)
+            if mask is not None:
+                mask = self._apply_pil_aug(mask, aug_params, is_mask=True)
             if self.train:
                 img = self.color_jitter(img)
             img_t = transforms.functional.to_tensor(img)
+            img_t = self._apply_tensor_aug(img_t, aug_params)
             imgs.append(self.normalize(img_t))
             if mask is not None:
                 masks.append(transforms.functional.to_tensor(mask))
@@ -2097,6 +2253,21 @@ def main():
         f"momentum={getattr(cfg, 'momentum', 0.0)}, nesterov={getattr(cfg, 'nesterov', False)}",
         flush=True,
     )
+    print(
+        f"Augmentation: random_horizontal_flip={getattr(cfg, 'random_horizontal_flip', True)}, "
+        f"vertical_flip={getattr(cfg, 'random_vertical_flip', False)}, "
+        f"color_jitter=True, "
+        f"random_rotation={getattr(cfg, 'random_rotation', False)}, "
+        f"rotation_degrees={getattr(cfg, 'random_rotation_degrees', 0)}, "
+        f"rotation_p={getattr(cfg, 'random_rotation_p', 0)}, "
+        f"random_affine={getattr(cfg, 'random_affine', False)}, "
+        f"translate={getattr(cfg, 'random_translate', 0)}, "
+        f"scale=({getattr(cfg, 'random_scale_min', 1.0)}, {getattr(cfg, 'random_scale_max', 1.0)}), "
+        f"shear={getattr(cfg, 'random_shear_degrees', 0)}, "
+        f"gaussian_blur={getattr(cfg, 'gaussian_blur', False)}, "
+        f"gaussian_noise={getattr(cfg, 'gaussian_noise', False)}",
+        flush=True,
+    )
     if getattr(cfg, "slowfast_auxiliary_reproductive", False):
         print(
             "Auxiliary branch: enabled, "
@@ -2136,6 +2307,27 @@ def main():
         use_sampled_endpoints=getattr(cfg, "hierarchical_use_sampled_endpoints", True),
         return_segments=(cfg.model_name in {"slowfast_segment_lstm", "slowfast_state_aggregation"}),
         num_segments=getattr(cfg, "num_segments", 3),
+        random_horizontal_flip=getattr(cfg, "random_horizontal_flip", True),
+        random_horizontal_flip_p=getattr(cfg, "random_horizontal_flip_p", 0.5),
+        random_vertical_flip=getattr(cfg, "random_vertical_flip", False),
+        random_vertical_flip_p=getattr(cfg, "random_vertical_flip_p", 0.2),
+        random_rotation=getattr(cfg, "random_rotation", False),
+        random_rotation_degrees=getattr(cfg, "random_rotation_degrees", 8),
+        random_rotation_p=getattr(cfg, "random_rotation_p", 0.5),
+        random_affine=getattr(cfg, "random_affine", False),
+        random_affine_p=getattr(cfg, "random_affine_p", 0.5),
+        random_translate=getattr(cfg, "random_translate", 0.03),
+        random_scale_min=getattr(cfg, "random_scale_min", 0.95),
+        random_scale_max=getattr(cfg, "random_scale_max", 1.05),
+        random_shear_degrees=getattr(cfg, "random_shear_degrees", 3),
+        gaussian_blur=getattr(cfg, "gaussian_blur", False),
+        gaussian_blur_p=getattr(cfg, "gaussian_blur_p", 0.2),
+        gaussian_blur_kernel=getattr(cfg, "gaussian_blur_kernel", 3),
+        gaussian_blur_sigma_min=getattr(cfg, "gaussian_blur_sigma_min", 0.1),
+        gaussian_blur_sigma_max=getattr(cfg, "gaussian_blur_sigma_max", 1.0),
+        gaussian_noise=getattr(cfg, "gaussian_noise", False),
+        gaussian_noise_p=getattr(cfg, "gaussian_noise_p", 0.2),
+        gaussian_noise_std=getattr(cfg, "gaussian_noise_std", 0.01),
     )
     val_dataset = CroppedInstanceDataset(
         val_dir,

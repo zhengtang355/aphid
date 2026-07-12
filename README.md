@@ -1,6 +1,6 @@
-# Bean Aphid Parturition Behavior Recognition
+# PC-SGMSlowFast
 
-This repository provides code for bean aphid (*Aphis craccivora* Koch) parturition behavior recognition in macro-monitoring videos. The method uses a two-stage framework: YOLOv8 first localizes individual aphids, and an improved SlowFast model, DESASlowFast-TDEM, then classifies individual behavior clips into three classes.
+This repository provides code for bean aphid (*Aphis craccivora* Koch) parturition behavior recognition in macro-monitoring videos. The method uses a two-stage framework: YOLOv8 first localizes individual aphids, and the improved SlowFast model PC-SGMSlowFast then classifies individual behavior clips into three classes.
 
 ## Behavior Classes
 
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ## Training
 
-Example command for training DESASlowFast-TDEM:
+Example command for training PC-SGMSlowFast:
 
 ```bash
 python train/train_all_baselines_config.py --config configs/baseline_config_3class_slowfast_uniform32_desa_tda.json
@@ -85,4 +85,3 @@ The bean aphid parturition behavior dataset is released separately. See `DATASET
 ## Citation
 
 If you use this code or dataset, please cite the related paper.
-
