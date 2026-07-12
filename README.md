@@ -15,9 +15,8 @@ The internal training labels in the code may use `nobirth`, `start`, and `birth`
 ```text
 configs/        Training configuration files
 data_tools/     Data conversion, frame extraction, and crop generation scripts
-train/          Main training script for DESASlowFast-TDEM and baseline models
+train/          Main training script for PC-SGMSlowFast and baseline models
 eval/           Evaluation and model-complexity scripts
-inference/      Video inference and result visualization scripts
 visualization/  Attention and dual-end mask visualization scripts
 baselines/      Baseline video recognition model scripts
 figures/        Model and workflow diagrams
@@ -52,31 +51,6 @@ python eval/eval_checkpoint_confusion_matrix.py --checkpoint path/to/best_model_
 ```
 
 Model parameters and FLOPs can be computed with scripts in `eval/`.
-
-## Inference and Visualization
-
-For XML-annotation-based multi-target visualization:
-
-```bash
-python inference/infer_slowfast_xml_after_default.py ^
-  --video path/to/video.mp4 ^
-  --xml path/to/annotations.xml ^
-  --checkpoint path/to/best_model_by_mAP.pth ^
-  --output_dir outputs ^
-  --default_seconds 15 ^
-  --window_seconds 15
-```
-
-For direct label visualization without model inference:
-
-```bash
-python inference/visualize_labeled_segments.py ^
-  --video path/to/video.mp4 ^
-  --xml path/to/annotations.xml ^
-  --output outputs/annotated.mp4 ^
-  --durations 15,20,15 ^
-  --labels nobirth,start,birth
-```
 
 ## Data
 
