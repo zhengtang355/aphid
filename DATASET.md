@@ -28,5 +28,5 @@ Each sample folder or video clip should contain an individual aphid behavior seg
 
 ## Detection Annotations
 
-For video-level visualization, CVAT XML annotations can be used to provide aphid bounding boxes and track IDs. Scripts in `data_tools/` can convert XML annotations and crop individual aphid regions.
+For video-level visualization, CVAT XML annotations can be used to provide aphid bounding boxes and track IDs. Scripts in `data_tools/` .
 
