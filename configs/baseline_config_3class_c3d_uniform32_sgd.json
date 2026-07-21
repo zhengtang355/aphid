@@ -20,11 +20,13 @@
   "dropout": 0.3,
   "label_smoothing": 0.0,
   "loss_name": "ce",
-  "pretrained": false,
+  "pretrained": true,
+  "c3d_weight_path": "D:\\ucf101-caffe.pth",
+  "c3d_load_classifier": true,
   "use_class_weights": false,
   "sampling": "uniform",
-  "num_frames": 32,
+  "num_frames": 16,
   "frame_stride": 1,
-  "output_root": "runs",
-  "run_name": "c3d_uniform32_sgd32均采样"
+  "output_root": "runs2",
+  "run_name": "c3d_pretrained16_sgd"
 }

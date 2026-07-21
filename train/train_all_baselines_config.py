@@ -615,7 +615,7 @@ class ResNetTemporalBase(nn.Module):
         return self.classifier(feat)
 
 
-class SimpleC3D(nn.Module):
+class ClassicC3D(nn.Module):
     def __init__(self, num_classes, dropout=0.5):
         super().__init__()
         self.features = nn.Sequential(
@@ -634,16 +634,70 @@ class SimpleC3D(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv3d(512, 512, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool3d((1, 1, 1)),
+            nn.MaxPool3d(kernel_size=2, stride=2),
+            nn.Conv3d(512, 512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(512, 512, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool3d(kernel_size=2, stride=2, padding=(0, 1, 1)),
         )
         self.classifier = nn.Sequential(
-            nn.Flatten(),
+            nn.Linear(8192, 4096),
+            nn.ReLU(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(512, num_classes),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(4096, num_classes),
         )
 
     def forward(self, x):
-        return self.classifier(self.features(x))
+        x = self.features(x)
+        x = x.flatten(1)
+        return self.classifier(x)
+
+
+def load_c3d_pretrained_weights(model, cfg):
+    weight_path = getattr(cfg, "c3d_weight_path", None)
+    if not getattr(cfg, "pretrained", False) or not weight_path:
+        return model
+    weight_path = Path(weight_path)
+    if not weight_path.exists():
+        print(f"C3D pretrained weight not found: {weight_path}", flush=True)
+        return model
+
+    checkpoint = torch.load(weight_path, map_location="cpu")
+    state_dict = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+    if not isinstance(state_dict, dict):
+        print(f"Unexpected C3D checkpoint format: {type(state_dict)}", flush=True)
+        return model
+
+    model_state = model.state_dict()
+    load_classifier = bool(getattr(cfg, "c3d_load_classifier", False))
+    loaded, skipped = [], []
+    for key, tensor in state_dict.items():
+        if key not in model_state:
+            skipped.append((key, "missing"))
+            continue
+        if key.startswith("classifier.") and not load_classifier:
+            skipped.append((key, "classifier_disabled"))
+            continue
+        if tuple(model_state[key].shape) != tuple(tensor.shape):
+            skipped.append((key, f"shape_mismatch {tuple(tensor.shape)} -> {tuple(model_state[key].shape)}"))
+            continue
+        model_state[key] = tensor
+        loaded.append(key)
+
+    model.load_state_dict(model_state, strict=False)
+    print(
+        f"Loaded {len(loaded)} C3D pretrained tensors from {weight_path.name}. "
+        f"Skipped {len(skipped)} tensors.",
+        flush=True,
+    )
+    if skipped:
+        preview = ", ".join(f"{k} ({reason})" for k, reason in skipped[:6])
+        print(f"C3D skipped tensors: {preview}", flush=True)
+    return model
 
 
 class SlowFastDualEndAttentionWrapper(nn.Module):
@@ -1354,7 +1408,8 @@ def build_model(cfg, num_classes):
     if name == "resnet50_transformer":
         return ResNetTemporalBase(num_classes, "transformer", cfg)
     if name == "c3d":
-        return SimpleC3D(num_classes, cfg.dropout)
+        model = ClassicC3D(num_classes, cfg.dropout)
+        return load_c3d_pretrained_weights(model, cfg)
     if name == "r3d18":
         from torchvision.models.video import R3D_18_Weights, r3d_18
 
