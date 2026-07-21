@@ -37,7 +37,7 @@ pip install -r requirements.txt
 Example command for training PC-SGMSlowFast:
 
 ```bash
-python train/train_all_baselines_config.py --config configs/baseline_config_3class_slowfast_uniform32_desa_tda.json
+python train/train_all_baselines_config.py --config configs/baseline_config_3class_slowfast_uniform32_pc_sge.json
 ```
 
 Please update dataset paths in the configuration file before training.
